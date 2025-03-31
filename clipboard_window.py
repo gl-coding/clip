@@ -1,9 +1,79 @@
 import sys
 import pyperclip
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QTextEdit, QVBoxLayout, 
-                           QWidget, QHBoxLayout, QPushButton, QLabel)
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QColor
+                           QWidget, QHBoxLayout, QPushButton, QLabel, QMenu)
+from PyQt5.QtCore import Qt, QTimer, QSize, QPoint
+from PyQt5.QtGui import QFont, QColor, QCursor
+
+class ResizableWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.resizing = False
+        self.resize_edge = None
+        self.resize_margin = 5
+        self.oldPos = None
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            pos = event.pos()
+            if pos.x() <= self.resize_margin:  # 左边缘
+                self.resizing = True
+                self.resize_edge = 'left'
+                self.setCursor(QCursor(Qt.SizeHorCursor))
+            elif pos.x() >= self.width() - self.resize_margin:  # 右边缘
+                self.resizing = True
+                self.resize_edge = 'right'
+                self.setCursor(QCursor(Qt.SizeHorCursor))
+            elif pos.y() <= self.resize_margin:  # 上边缘
+                self.resizing = True
+                self.resize_edge = 'top'
+                self.setCursor(QCursor(Qt.SizeVerCursor))
+            elif pos.y() >= self.height() - self.resize_margin:  # 下边缘
+                self.resizing = True
+                self.resize_edge = 'bottom'
+                self.setCursor(QCursor(Qt.SizeVerCursor))
+            else:
+                self.oldPos = event.globalPos()
+                self.setCursor(QCursor(Qt.ArrowCursor))
+    
+    def mouseMoveEvent(self, event):
+        if self.resizing:
+            if self.resize_edge == 'right':
+                width = event.pos().x()
+                if width >= self.parent().minimumWidth():
+                    self.parent().resize(width, self.parent().height())
+            elif self.resize_edge == 'bottom':
+                height = event.pos().y()
+                if height >= self.parent().minimumHeight():
+                    self.parent().resize(self.parent().width(), height)
+            elif self.resize_edge == 'left':
+                width = self.parent().width() - event.pos().x()
+                if width >= self.parent().minimumWidth():
+                    self.parent().resize(width, self.parent().height())
+                    self.parent().move(self.parent().x() + event.pos().x(), self.parent().y())
+            elif self.resize_edge == 'top':
+                height = self.parent().height() - event.pos().y()
+                if height >= self.parent().minimumHeight():
+                    self.parent().resize(self.parent().width(), height)
+                    self.parent().move(self.parent().x(), self.parent().y() + event.pos().y())
+        elif self.oldPos is not None:
+            delta = event.globalPos() - self.oldPos
+            self.parent().move(self.parent().pos() + delta)
+            self.oldPos = event.globalPos()
+        else:
+            pos = event.pos()
+            if pos.x() <= self.resize_margin or pos.x() >= self.width() - self.resize_margin:
+                self.setCursor(QCursor(Qt.SizeHorCursor))
+            elif pos.y() <= self.resize_margin or pos.y() >= self.height() - self.resize_margin:
+                self.setCursor(QCursor(Qt.SizeVerCursor))
+            else:
+                self.setCursor(QCursor(Qt.ArrowCursor))
+    
+    def mouseReleaseEvent(self, event):
+        self.oldPos = None
+        self.resizing = False
+        self.resize_edge = None
+        self.setCursor(QCursor(Qt.ArrowCursor))
 
 class ClipboardWindow(QMainWindow):
     def __init__(self):
@@ -21,9 +91,10 @@ class ClipboardWindow(QMainWindow):
         self.setWindowTitle('重点内容')
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setMinimumSize(200, 150)  # 设置最小尺寸
         
         # 创建中心部件和布局
-        central_widget = QWidget()
+        central_widget = ResizableWidget(self)
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -43,9 +114,26 @@ class ClipboardWindow(QMainWindow):
         title_layout.setContentsMargins(10, 0, 10, 0)
         
         # 添加标题文本
-        title_label = QLabel("剪贴板监控")
+        title_label = QLabel("重点内容")
         title_label.setStyleSheet("color: white; font-weight: bold;")
         title_layout.addWidget(title_label)
+        
+        # 添加设置按钮
+        settings_button = QPushButton("⚙")
+        settings_button.setFixedSize(20, 20)
+        settings_button.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: white;
+                border: none;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background-color: #34495e;
+            }
+        """)
+        settings_button.clicked.connect(self.show_size_menu)
+        title_layout.addWidget(settings_button)
         
         # 添加关闭按钮
         close_button = QPushButton("×")
@@ -94,13 +182,37 @@ class ClipboardWindow(QMainWindow):
         main_layout.addWidget(content_widget)
         
         # 设置窗口大小和位置
-        self.setGeometry(100, 100, 300, 200)
+        self.setGeometry(0, 0, 300, 200)
         
-        # 添加鼠标事件处理
-        self.oldPos = None
-        title_bar.mousePressEvent = self.on_mouse_press
-        title_bar.mouseMoveEvent = self.on_mouse_move
-        title_bar.mouseReleaseEvent = self.on_mouse_release
+    def show_size_menu(self):
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2c3e50;
+                color: white;
+                border: none;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 20px;
+            }
+            QMenu::item:selected {
+                background-color: #34495e;
+            }
+        """)
+        
+        small_action = menu.addAction("小窗口 (200x150)")
+        medium_action = menu.addAction("中窗口 (400x300)")
+        large_action = menu.addAction("大窗口 (600x400)")
+        
+        action = menu.exec_(self.mapToGlobal(self.rect().topRight() + QPoint(-100, 30)))
+        
+        if action == small_action:
+            self.resize(300, 200)
+        elif action == medium_action:
+            self.resize(400, 300)
+        elif action == large_action:
+            self.resize(600, 400)
         
     def check_clipboard(self):
         try:
@@ -110,19 +222,6 @@ class ClipboardWindow(QMainWindow):
                 self.text_edit.setText(content)
         except Exception as e:
             print(f"获取剪贴板内容时出错：{str(e)}")
-    
-    def on_mouse_press(self, event):
-        if event.button() == Qt.LeftButton:
-            self.oldPos = event.globalPos()
-    
-    def on_mouse_move(self, event):
-        if self.oldPos is not None:
-            delta = event.globalPos() - self.oldPos
-            self.move(self.pos() + delta)
-            self.oldPos = event.globalPos()
-    
-    def on_mouse_release(self, event):
-        self.oldPos = None
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
