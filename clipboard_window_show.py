@@ -3,22 +3,28 @@ import pyperclip
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QTextEdit, QVBoxLayout, 
                            QWidget, QHBoxLayout, QPushButton, QLabel)
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QColor
+from PyQt5.QtGui import QFont, QColor, QClipboard
 
 class ClipboardWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.initUI()
         self.last_content = ""
+        self.last_selection = ""
         
-        # 设置定时器，每秒检查一次剪贴板
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.check_clipboard)
-        self.timer.start(1000)  # 1000ms = 1秒
+        # 获取系统剪贴板
+        self.clipboard = QApplication.clipboard()
+        # 连接剪贴板信号
+        self.clipboard.dataChanged.connect(self.on_clipboard_change)
+        
+        # 设置定时器检查选中文本
+        self.selection_timer = QTimer()
+        self.selection_timer.timeout.connect(self.check_selection)
+        self.selection_timer.start(50)  # 每50毫秒检查一次
         
     def initUI(self):
         # 设置窗口基本属性
-        self.setWindowTitle('重点内容')
+        self.setWindowTitle('文本监控')
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         
@@ -43,7 +49,7 @@ class ClipboardWindow(QMainWindow):
         title_layout.setContentsMargins(10, 0, 10, 0)
         
         # 添加标题文本
-        title_label = QLabel("剪贴板监控")
+        title_label = QLabel("文本监控")
         title_label.setStyleSheet("color: white; font-weight: bold;")
         title_layout.addWidget(title_label)
         
@@ -83,10 +89,9 @@ class ClipboardWindow(QMainWindow):
                 background-color: transparent;
                 border: none;
                 padding: 10px;
-                color: red;
             }
         """)
-        self.text_edit.setFont(QFont('Arial', 18))
+        self.text_edit.setFont(QFont('Arial', 10))
         content_layout.addWidget(self.text_edit)
         
         # 添加所有部件到主布局
@@ -102,14 +107,41 @@ class ClipboardWindow(QMainWindow):
         title_bar.mouseMoveEvent = self.on_mouse_move
         title_bar.mouseReleaseEvent = self.on_mouse_release
         
-    def check_clipboard(self):
+    def on_clipboard_change(self):
+        """当剪贴板内容变化时触发"""
         try:
-            content = pyperclip.paste()
-            if content != self.last_content:
+            content = self.clipboard.text()
+            if content and content != self.last_content:
                 self.last_content = content
-                self.text_edit.setText(content)
+                self.text_edit.setText(f"剪贴板内容：\n{content}")
         except Exception as e:
             print(f"获取剪贴板内容时出错：{str(e)}")
+    
+    def check_selection(self):
+        """检查选中文本的变化"""
+        try:
+            # 保存当前剪贴板内容
+            current_clipboard = pyperclip.paste()
+            
+            # 模拟 Command+C 来获取选中文本
+            pyperclip.copy('')  # 清空剪贴板
+            import os
+            os.system('osascript -e \'tell application "System Events" to keystroke "c" using command down\'')
+            
+            # 等待一小段时间让系统处理复制操作
+            QApplication.processEvents()
+            
+            # 获取选中文本
+            selected_text = pyperclip.paste()
+            
+            # 恢复原来的剪贴板内容
+            pyperclip.copy(current_clipboard)
+            
+            if selected_text and selected_text != self.last_selection:
+                self.last_selection = selected_text
+                self.text_edit.setText(f"选中文本：\n{selected_text}")
+        except Exception as e:
+            print(f"获取选中文本时出错：{str(e)}")
     
     def on_mouse_press(self, event):
         if event.button() == Qt.LeftButton:
